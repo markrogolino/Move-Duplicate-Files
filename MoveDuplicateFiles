@@ -1,0 +1,43 @@
+# Set the root directory to scan for duplicates
+$rootDir = "C:\Set\The\Target\Directory"
+
+# Set the directory to move the duplicate files to
+$destDir = "C:\DuplicateFiles"
+
+if (-not (Test-Path -Path $destDir -PathType Container)) {
+    New-Item -ItemType Directory -Path $destDir | Out-Null
+}
+function Get-FileHash($filePath) {
+    $hasher = [System.Security.Cryptography.MD5]::Create()
+    $stream = [System.IO.File]::OpenRead($filePath)
+    $hash = [System.BitConverter]::ToString($hasher.ComputeHash($stream))
+    $stream.Close()
+    return $hash
+}
+$files = Get-ChildItem -Path $rootDir -Recurse -File
+$groups = $files | Group-Object { Get-FileHash $_.FullName }
+foreach ($group in $groups) {
+    $files = $group.Group
+    $fileCount = $files.Count
+    if ($fileCount -gt 1) {
+        $extension = $files[0].Extension.ToLower().TrimStart(".")
+        $extensionDir = Join-Path $destDir $extension
+        if (-not (Test-Path -Path $extensionDir -PathType Container)) {
+            New-Item -ItemType Directory -Path $extensionDir | Out-Null
+        }
+        $oldestFile = $files | Sort-Object CreationTime | Select-Object -First 1
+        for ($i = 0; $i -lt $fileCount; $i++) {
+            if ($files[$i] -ne $oldestFile) {
+                $fileToMove = $files[$i].FullName
+                $newFileName = Join-Path $extensionDir $files[$i].Name
+                $j = 0
+                while (Test-Path -Path $newFileName) {
+                    $j++
+                    $newFileName = Join-Path $extensionDir ("$($j)_$($files[$i].Name)")
+                }
+                Move-Item $fileToMove $newFileName
+                Write-Host "Moved $($files[$i].FullName) to $newFileName" -ForegroundColor Green
+            }
+        }
+    }
+}
